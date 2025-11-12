@@ -11,9 +11,9 @@ import os.path
 from functools import reduce # Import pro jiný styl slučování
 
 # --- Konfigurace ---
-# Názvy souborů
+# Názvy souborů (UPRAVENO PODLE NAHRANÝCH SOUBORŮ)
 TEMP_FILE = "mly-0-20000-0-11723-T.csv"
-WIND_FILE = "mly-0-20000-0-11723-F.csv"
+WIND_FILE = "mly-0-20000-0-11723-F (3).csv" # <-- UPRAVENO
 PRECIP_FILE = "mly-0-20000-0-11723-SRA.csv"
 
 # Fonty pro PDF
