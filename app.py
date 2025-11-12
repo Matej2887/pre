@@ -8,19 +8,20 @@ import warnings
 from io import BytesIO
 from fpdf import FPDF
 import os.path
-from functools import reduce # Import pro jiný styl slučování
+from functools import reduce 
 
 # --- Konfigurace ---
-# Názvy souborů (UPRAVENO PODLE NAHRANÝCH SOUBORŮ)
+# UJISTĚTE SE, ŽE TYTO SOUBORY JSOU VE STEJNÉ SLOŽCE JAKO SKRIPT
 TEMP_FILE = "mly-0-20000-0-11723-T.csv"
-WIND_FILE = "mly-0-20000-0-11723-F (3).csv" # <-- UPRAVENO
+WIND_FILE = "mly-0-20000-0-11723-F (3).csv" # <-- Nastaveno na soubor, který jste nahrál
 PRECIP_FILE = "mly-0-20000-0-11723-SRA.csv"
 
-# Fonty pro PDF
+# Fonty pro PDF (tyto také musí být ve složce, pokud neexistují)
+# Pokud je nemáte, generování PDF selže.
 FONT_NORMAL = "DejaVuSans.ttf"
 FONT_BOLD = "DejaVuSans-Bold.ttf"
 
-# Definice metrik pro grafy a PDF (přesunuto nahoru)
+# Definice metrik pro grafy a PDF
 METRIC_DEFINITIONS = {
     'avg_temp': {'unit': '°C', 'label': 'Průměrná teplota'},
     'avg_wind': {'unit': 'm/s', 'label': 'Průměrná rychlost větru'},
@@ -37,6 +38,7 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 def load_and_filter_csv(file_path, time_filter, md_filter, output_col_name):
     """Načte a vyfiltruje jeden datový soubor."""
     try:
+        # Tato funkce hledá soubor na disku
         raw_data = pd.read_csv(
             file_path, 
             usecols=['YEAR', 'MONTH', 'TIMEFUNCTION', 'MDFUNCTION', 'VALUE']
@@ -52,7 +54,8 @@ def load_and_filter_csv(file_path, time_filter, md_filter, output_col_name):
         return selected_data
         
     except FileNotFoundError:
-        st.error(f"Chyba: Soubor '{file_path}' nebyl nalezen. Ujistěte se, že je přítomen v repozitáři.")
+        # Tato chyba se vám zobrazila
+        st.error(f"Chyba: Soubor '{file_path}' nebyl nalezen. Ujistěte se, že je přítomen ve stejné složce jako skript.")
         return None
     except Exception as e:
         st.error(f"Neočekávaná chyba při zpracování '{file_path}': {e}")
@@ -73,7 +76,7 @@ def get_processed_data_and_models():
             st.error("Chyba při načítání jednoho nebo více datových souborů. Zkontrolujte logy.")
             return None, None, None, None
 
-        # Slučování dat pomocí 'reduce' (jiný styl než původní kód)
+        # Slučování dat
         merged_monthly_data = reduce(lambda left, right: pd.merge(left, right, on=['YEAR', 'MONTH'], how='outer'), dataframes_to_merge)
 
         # Filtrace pouze kompletních roků
@@ -111,7 +114,6 @@ def get_processed_data_and_models():
             regression_models[metric] = model
             trend_analysis[metric] = {'slope': model.coef_[0], 'intercept': model.intercept_}
             
-            # Přidání sloupce s trendem pro vykreslení
             annual_summary[f'{metric}_trend'] = model.predict(years_array)
             
         st.success("Data byla úspěšně zpracována a modely natrénovány.")
@@ -123,21 +125,15 @@ def generate_trend_plot(metric, metric_info, annual_data, future_data, trends):
     """Vytvoří Matplotlib graf a vrátí ho jako in-memory buffer."""
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Historická data
     ax.scatter(annual_data['YEAR'], annual_data[metric], label=f'Roční data ({metric_info["label"]})', alpha=0.7, s=10)
-    
-    # Historický trend
     ax.plot(annual_data['YEAR'], annual_data[f'{metric}_trend'], color='red', linestyle='--', label=f'Lineární trend ({trends[metric]["slope"]:.4f} {metric_info["unit"]}/rok)')
     
-    # Spojnice na predikci
     last_year_data = annual_data['YEAR'].max()
     last_val_data = annual_data.loc[annual_data['YEAR'] == last_year_data, f'{metric}_trend'].values[0]
     first_pred_year = future_data.index.min()
     first_pred_val = future_data.loc[first_pred_year, f'pred_{metric}']
     
     ax.plot([last_year_data, first_pred_year], [last_val_data, first_pred_val], color='red', linestyle=':', label='Extrapolace')
-    
-    # Budoucí predikované body
     ax.plot(future_data.index, future_data[f'pred_{metric}'], color='red', marker='o', linestyle=':', markersize=5)
     
     ax.set_title(f'Historický vývoj a extrapolace - {metric_info["label"]} (Brno)')
@@ -155,8 +151,9 @@ def generate_trend_plot(metric, metric_info, annual_data, future_data, trends):
 def create_report_document(annual_data, trends, models, future_projections, metric_info_dict):
     """Sestaví kompletní PDF report."""
     
+    # Ověření existence fontů
     if not os.path.isfile(FONT_NORMAL) or not os.path.isfile(FONT_BOLD):
-        st.error(f"Kritická chyba: Chybí soubory fontů '{FONT_NORMAL}' nebo '{FONT_BOLD}'. PDF nelze vygenerovat.")
+        st.error(f"Kritická chyba: Chybí soubory fontů '{FONT_NORMAL}' nebo '{FONT_BOLD}'. PDF nelze vygenerovat. Stáhněte je a přidejte do složky.")
         return None
 
     try:
@@ -169,12 +166,10 @@ def create_report_document(annual_data, trends, models, future_projections, metr
         report.add_page()
         content_width = report.w - report.l_margin - report.r_margin
         
-        # Titulek
         report.set_font('DejaVu', 'B', 16)
         report.multi_cell(content_width, 10, 'Report o klimatických trendech: Stanice Brno 11723', 0, 'C', ln=1)
         report.ln(10)
 
-        # Metodika
         report.set_font('DejaVu', 'B', 12)
         report.multi_cell(content_width, 10, '1. Metodologie', 0, 'L', ln=1)
         report.set_font('DejaVu', '', 10)
@@ -189,7 +184,6 @@ def create_report_document(annual_data, trends, models, future_projections, metr
         )
         report.ln(5)
 
-        # Omezení
         report.set_font('DejaVu', 'B', 12)
         report.multi_cell(content_width, 10, '2. Důležitá omezení modelu', 0, 'L', ln=1)
         report.set_font('DejaVu', 'B', 10)
@@ -222,7 +216,7 @@ def create_report_document(annual_data, trends, models, future_projections, metr
         report.set_font('DejaVu', '', 10)
         
         report.cell(60, 7, 'Měřeno', 1, 0)
-        report.cell(60, 7, 'Roční změna (sklon)', 1, 1) # '1' na konci posune na další řádek
+        report.cell(60, 7, 'Roční změna (sklon)', 1, 1) 
         
         report.cell(60, 7, 'Průměrná teplota', 1, 0)
         report.cell(60, 7, f"{trends['avg_temp']['slope']:.4f} °C / rok", 1, 1)
@@ -255,7 +249,6 @@ def create_report_document(annual_data, trends, models, future_projections, metr
         # --- Stránky 3, 4, 5: Grafy ---
         for metric, info in metric_info_dict.items():
             report.add_page()
-            content_width = report.w - report.l_margin - report.r_margin
             
             report.set_font('DejaVu', 'B', 12)
             report.multi_cell(content_width, 10, f"4. Vizualizace: {info['label']}", 0, 'L', ln=1)
@@ -265,7 +258,6 @@ def create_report_document(annual_data, trends, models, future_projections, metr
             report.image(plot_stream, x=10, y=None, w=190)
             plot_stream.close()
 
-        # Vrácení finálního PDF
         return bytes(report.output(dest='S'))
 
     except Exception as e:
@@ -323,7 +315,6 @@ if annual_data is not None:
     # Ukázkový graf
     st.subheader("Ukázkový graf (teplota)")
     with st.spinner("Generuji náhled grafu..."):
-        # METRIC_DEFINITIONS je již definováno nahoře
         fig_temp_plot = generate_trend_plot('avg_temp', METRIC_DEFINITIONS['avg_temp'], annual_data, future_projections, trend_results)
         st.image(fig_temp_plot, caption="Vizualizace vývoje a extrapolace průměrné teploty", use_column_width=True)
         
@@ -344,8 +335,8 @@ if annual_data is not None:
         )
         st.success("Report je připraven ke stažení.")
     else:
-        st.error("Report se nepodařilo vygenerovat. Zkontrolujte chybová hlášení.")
+        st.error("Report se nepodařilo vygenerovat. Zkontrolujte chybová hlášení (např. chybějící fonty).")
 
 else:
     # Zobrazí se, pokud selže načítání dat
-    st.error("Načítání dat selhalo. Aplikaci nelze spustit. Zkontrolujte, zda jsou datové soubory přítomny.")
+    st.error("Načítání dat selhalo. Aplikaci nelze spustit. Zkontrolujte, zda jsou datové soubory (T, F, SRA) přítomny ve složce skriptu.")
